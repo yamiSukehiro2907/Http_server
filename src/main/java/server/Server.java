@@ -1,41 +1,54 @@
 package server;
 
-import java.io.BufferedReader;
+import helpers.Client;
+import Handler.ClientHandler;
+import helpers.Logger;
+
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server extends Thread {
 
     private final int PORT;
-
     private final String ipAddress;
-
-    private final int MAX_REQUEST_SIZE = 4096;
-
+    private final int MAX_REQUEST_SIZE = 8192;
     private static final String RESOURCES_FOLDER = "src/main/resources";
-
+    /// it tells max how many connections can wait in the queue
     private final int maxConnections;
+    private final int maxThreads;
+    private final ExecutorService executorService;
+    private final LinkedBlockingQueue<Client> clientQueue;
+    private ServerSocket serverSocket;
+    private volatile boolean running = true;
 
-    public Server(String ipAddress, int PORT, int maxConnections) {
+    private final AtomicInteger activeThreads = new AtomicInteger(0);
+
+    public Server(String ipAddress, int PORT, int maxConnections, int maxThreads) {
         this.ipAddress = ipAddress;
         this.PORT = PORT;
         this.maxConnections = maxConnections;
+        this.maxThreads = maxThreads;
+        this.executorService = Executors.newFixedThreadPool(maxThreads);
+        this.clientQueue = new LinkedBlockingQueue<>();
     }
-
-
-    private ServerSocket serverSocket;
 
 
     private void createServer() {
         try {
             this.serverSocket = new ServerSocket(PORT, maxConnections, InetAddress.getByName(ipAddress));
-            System.out.println("Server socket created and created and bound to " + ipAddress + ":" + PORT);
+            Logger.log("HTTP Server started on http://" + ipAddress + ":" + PORT);
+            Logger.log("Thread pool size: " + maxThreads);
+            Logger.log("Serving files from '" + RESOURCES_FOLDER + "' directory");
+            Logger.log("Press Ctrl+C to stop the server");
         } catch (IOException e) {
-            System.err.println("Error: Creating serverSocket: " + e.getMessage());
+            Logger.error("Error creating serverSocket: " + e.getMessage());
             System.exit(1);
         }
     }
@@ -43,8 +56,11 @@ public class Server extends Thread {
 
     private void startServer() {
 
-        startServer();
+        createServer();
         ///  start the server
+
+        startQueueProcessor();
+        /// start the thread that will be processing
 
         Thread shutDownThread = createShutDownThread();
         ///  get the thread to run before shutting down the server....
@@ -53,24 +69,66 @@ public class Server extends Thread {
         /// This thread when JVM will be ending or shutting down the server....
 
 
-        while (!serverSocket.isClosed()) {
-            try (Socket connection = serverSocket.accept(); ///  accept the connection
-                 /// by using bufferedReader we can set the request size and all as well as it takes input from any type of source and it is thread-safe
-                 BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                 OutputStream outputStream = connection.getOutputStream();) {
-
-                /// create threads for each client to allow multiple client connection
-                Thread connectionThread = new Thread(() -> {
-                    handleClient(connection);
-                });
-
-                ///  start the thread
-                connectionThread.start();
-
+        while (running && !serverSocket.isClosed()) {
+            try {
+                Socket connection = serverSocket.accept(); ///  accept the connection
+                Client client = new Client(connection);
+                clientQueue.offer(client);
+                logThreadPoolStatus();
             } catch (IOException e) {
-                System.err.println("Error handling the client connection: " + e.getMessage());
+                if (running) {
+                    System.err.println("Error accepting the client connection: " + e.getMessage());
+                }
             }
         }
+
+    }
+
+    private void startQueueProcessor() {
+        Thread queueProcessor = new Thread(() -> {
+            while (running) {
+                try {
+                    Client client = clientQueue.take();
+                    int active = activeThreads.get();
+                    if (active >= maxThreads) {
+                        Logger.log("Warning: No threads available , queuing connection");
+                    }
+
+                    executorService.submit(() -> {
+                        activeThreads.incrementAndGet();
+                        String threadName = Thread.currentThread().getName();
+
+                        try {
+                            Logger.logWithThread(threadName, "Connection dequeued. assigned to :" + threadName);
+
+                            ClientHandler clientHandler = new ClientHandler(
+                                    client,
+                                    RESOURCES_FOLDER,
+                                    MAX_REQUEST_SIZE,
+                                    ipAddress + ":" + PORT
+                            );
+
+                            clientHandler.handle();
+                        } catch (Exception e) {
+                            Logger.errorWithThread(threadName, "Error handling client: " + e.getMessage());
+                        } finally {
+                            activeThreads.decrementAndGet();
+                            client.close();
+                        }
+
+                    });
+                } catch (InterruptedException e) {
+                    if (running) {
+                        Logger.error("Queue processor interrupted: " + e.getMessage());
+                    }
+                    break;
+                }
+            }
+            ;
+        }, "QueueProcessor");
+
+        queueProcessor.setDaemon(true);
+        queueProcessor.start();
 
     }
 
@@ -80,13 +138,30 @@ public class Server extends Thread {
                 if (serverSocket != null && !serverSocket.isClosed()) {
                     serverSocket.close();
                 }
-            } catch (IOException e) {
-                System.err.println("Error closing the serverSocket: " + e.getMessage());
+                running = false;
+
+                executorService.shutdown();
+
+                if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
+                    executorService.shutdownNow();
+                }
+
+                Logger.log("Server stopped successfully");
+                Logger.close();
+
+            } catch (IOException | InterruptedException e) {
+                Logger.error("Error during shutdown: " + e.getMessage());
+                Logger.close();
             }
         });
     }
 
-    private void handleClient(Socket connection) {
+    private void logThreadPoolStatus() {
+        int active = activeThreads.get();
+        int queued = clientQueue.size();
 
+        if (active > 0 || queued > 0) {
+            Logger.log("Active clients being served: " + active + " , Clients waiting : " + queued);
+        }
     }
 }
