@@ -1,7 +1,7 @@
 package server;
 
-import helpers.Client;
 import Handler.ClientHandler;
+import helpers.Client;
 import helpers.Logger;
 
 import java.io.IOException;
