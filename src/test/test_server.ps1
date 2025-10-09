@@ -114,8 +114,8 @@ Run-Test "GET /photo.jpg (JPEG download)" "200" {
     Invoke-WebRequest -Uri "$SERVER_URL/photo.jpg" -Method GET -OutFile "$env:TEMP\downloaded_photo.jpg" -UseBasicParsing
 }
 
-Run-Test "GET /sample.txt (TXT download)" "200" {
-    Invoke-WebRequest -Uri "$SERVER_URL/sample.txt" -Method GET -OutFile "$env:TEMP\downloaded_sample.txt" -UseBasicParsing
+Run-Test "GET /sample1.txt (TXT download)" "200" {
+    Invoke-WebRequest -Uri "$SERVER_URL/sample1.txt" -Method GET -OutFile "$env:TEMP\downloaded_sample.txt" -UseBasicParsing
 }
 
 Test-FileIntegrity "PNG file integrity check" "src\main\resources\logo.png" "$env:TEMP\downloaded_logo.png"
