@@ -159,23 +159,16 @@ public class RequestHandler {
         }
     }
 
-    public static boolean isValidRequest(HttpRequest httpRequest) {
-        if (httpRequest == null || !httpRequest.isValid()) return false;
-        if (httpRequest.getMethod() != Method.GET && httpRequest.getMethod() != Method.POST) return false;
-        if (httpRequest.getPath() == null || httpRequest.getPath().isEmpty()) return false;
-        return httpRequest.getHttpVersion() != null && !httpRequest.getHttpVersion().isEmpty();
-    }
-
     public static boolean hasHostHeader(HttpRequest httpRequest) {
-        return httpRequest != null &&
-                httpRequest.getHeadersMap() != null &&
-                httpRequest.getHeadersMap().containsKey("Host") &&
-                httpRequest.getHeadersMap().get("Host") != null &&
-                !httpRequest.getHeadersMap().get("Host").trim().isEmpty();
+        return httpRequest == null ||
+                httpRequest.getHeadersMap() == null ||
+                !httpRequest.getHeadersMap().containsKey("Host") ||
+                httpRequest.getHeadersMap().get("Host") == null ||
+                httpRequest.getHeadersMap().get("Host").trim().isEmpty();
     }
 
     public static boolean validateHostHeader(HttpRequest httpRequest, String expectedHost) {
-        if (!hasHostHeader(httpRequest)) return false;
+        if (hasHostHeader(httpRequest)) return false;
         String requestHost = httpRequest.getHeadersMap().get("Host").trim();
         if (requestHost.contains("/")) requestHost = requestHost.substring(0, requestHost.indexOf("/"));
         if (requestHost.equalsIgnoreCase(expectedHost)) return true;
@@ -267,30 +260,5 @@ public class RequestHandler {
             sb.append(CHARACTERS.charAt(RANDOM.nextInt(CHARACTERS.length())));
         }
         return sb.toString();
-    }
-
-    public static String sanitizeFileName(String filename) {
-        if (filename == null) return "";
-        return filename.replaceAll("[^a-zA-Z0-9._-]", "_");
-    }
-
-    public static String getMimeType(String extension) {
-        if (extension == null) return "application/octet-stream";
-
-        switch (extension.toLowerCase()) {
-            case ".html":
-                return "text/html; charset=utf-8";
-            case ".txt":
-                return "text/plain";
-            case ".png":
-                return "image/png";
-            case ".jpg":
-            case ".jpeg":
-                return "image/jpeg";
-            case ".json":
-                return "application/json";
-            default:
-                return "application/octet-stream";
-        }
     }
 }

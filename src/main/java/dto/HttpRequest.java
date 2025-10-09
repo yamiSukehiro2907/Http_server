@@ -52,11 +52,6 @@ public class HttpRequest {
         return httpVersion != null && httpVersion.equals("HTTP/1.1");
     }
 
-    /// does this has host?
-    public boolean hasHost() {
-        return host != null && !host.isEmpty();
-    }
-
     /// does it contain JSON
     public boolean isJsonType() {
         return contentType != null && contentType.toLowerCase().contains("application/json");
@@ -67,7 +62,29 @@ public class HttpRequest {
         return method.toString().equals("GET");
     }
 
-    public boolean hasBody(){
+    public boolean hasBody() {
         return body != null && !body.isEmpty();
+    }
+
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("HttpRequest {\n");
+        sb.append("  isValid=").append(isValid).append(",\n");
+        if (!isValid) sb.append("  parseError='").append(parseError).append("',\n");
+        sb.append("  method=").append(method).append(",\n");
+        sb.append("  path='").append(path).append("',\n");
+        sb.append("  httpVersion='").append(httpVersion).append("',\n");
+        sb.append("  host='").append(host).append("',\n");
+        sb.append("  headersMap=").append(headersMap).append(",\n");
+        sb.append("  contentType='").append(contentType).append("',\n");
+        sb.append("  contentLength=").append(contentLength).append(",\n");
+        sb.append("  connectionType='").append(connectionType).append("',\n");
+        sb.append("  body='").append(body).append("',\n");
+        sb.append("  --- Derived Info ---\n");
+        sb.append("  isKeepAlive=").append(isKeepAlive()).append(",\n");
+        sb.append("  isJsonType=").append(isJsonType()).append(",\n");
+        sb.append("  hasBody=").append(hasBody()).append("\n");
+        sb.append("}");
+        return sb.toString();
     }
 }

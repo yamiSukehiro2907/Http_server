@@ -1,6 +1,7 @@
 package server;
 
-import Handler.ClientHandler;
+import handlers.ClientHandler;
+import handlers.ResponseHandler;
 import helpers.Client;
 import helpers.Logger;
 
@@ -53,6 +54,11 @@ public class Server extends Thread {
         }
     }
 
+    @Override
+    public void run() {
+        startServer();
+    }
+
 
     private void startServer() {
 
@@ -71,9 +77,21 @@ public class Server extends Thread {
 
         while (running && !serverSocket.isClosed()) {
             try {
-                Socket connection = serverSocket.accept(); ///  accept the connection
+                Socket connection = serverSocket.accept();
                 Client client = new Client(connection);
-                clientQueue.offer(client);
+                if (clientQueue.size() < maxConnections) {
+                    clientQueue.offer(client);
+                    Logger.log("Connection accepted, queue size: " + clientQueue.size());
+                } else {
+                    Logger.log("Connection queue full (" + maxConnections + "), sending 503");
+                    try {
+                        ResponseHandler.sendServiceUnavailable(client.getOutputStream(), 30);
+                    } catch (IOException ex) {
+                        Logger.error("Failed to send 503 response: " + ex.getMessage());
+                    } finally {
+                        client.close();
+                    }
+                }
                 logThreadPoolStatus();
             } catch (IOException e) {
                 if (running) {
@@ -90,24 +108,18 @@ public class Server extends Thread {
                 try {
                     Client client = clientQueue.take();
                     int active = activeThreads.get();
-                    if (active >= maxThreads) {
-                        Logger.log("Warning: No threads available , queuing connection");
-                    }
-
+                    if (active >= maxThreads) Logger.log("Warning: No threads available , queuing connection");
                     executorService.submit(() -> {
                         activeThreads.incrementAndGet();
                         String threadName = Thread.currentThread().getName();
-
                         try {
                             Logger.logWithThread(threadName, "Connection dequeued. assigned to :" + threadName);
-
                             ClientHandler clientHandler = new ClientHandler(
                                     client,
                                     RESOURCES_FOLDER,
                                     MAX_REQUEST_SIZE,
                                     ipAddress + ":" + PORT
                             );
-
                             clientHandler.handle();
                         } catch (Exception e) {
                             Logger.errorWithThread(threadName, "Error handling client: " + e.getMessage());
@@ -115,7 +127,6 @@ public class Server extends Thread {
                             activeThreads.decrementAndGet();
                             client.close();
                         }
-
                     });
                 } catch (InterruptedException e) {
                     if (running) {
@@ -135,20 +146,12 @@ public class Server extends Thread {
     private Thread createShutDownThread() {
         return new Thread(() -> {
             try {
-                if (serverSocket != null && !serverSocket.isClosed()) {
-                    serverSocket.close();
-                }
+                if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
                 running = false;
-
                 executorService.shutdown();
-
-                if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) {
-                    executorService.shutdownNow();
-                }
-
+                if (!executorService.awaitTermination(10, TimeUnit.SECONDS)) executorService.shutdownNow();
                 Logger.log("Server stopped successfully");
                 Logger.close();
-
             } catch (IOException | InterruptedException e) {
                 Logger.error("Error during shutdown: " + e.getMessage());
                 Logger.close();
@@ -159,7 +162,6 @@ public class Server extends Thread {
     private void logThreadPoolStatus() {
         int active = activeThreads.get();
         int queued = clientQueue.size();
-
         if (active > 0 || queued > 0) {
             Logger.log("Active clients being served: " + active + " , Clients waiting : " + queued);
         }

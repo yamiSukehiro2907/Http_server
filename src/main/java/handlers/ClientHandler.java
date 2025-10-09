@@ -77,7 +77,7 @@ public class ClientHandler {
 
                 Logger.logWithThread(threadName, "Request: " + httpRequest.toString());
 
-                if (!RequestHandler.hasHostHeader(httpRequest)) {
+                if (RequestHandler.hasHostHeader(httpRequest)) {
                     Logger.errorWithThread(threadName, "Missing Host header");
                     ResponseHandler.sendBadRequest(client.getOutputStream(), "Missing required host header", "close");
                     break;

@@ -105,19 +105,6 @@ public class Logger {
         }
     }
 
-    public static void logWithLevel(String level, String message) {
-        synchronized (lock) {
-            String timestamp = dateFormat.format(new Date());
-            String logMessage = "[" + timestamp + "] [" + level + "] " + message;
-
-            System.out.println(logMessage);
-
-            if (fileWriter != null) {
-                fileWriter.println(logMessage);
-            }
-        }
-    }
-
     public static void close() {
         synchronized (lock) {
             if (fileWriter != null) {
@@ -129,14 +116,4 @@ public class Logger {
             }
         }
     }
-
-    public static void flush() {
-        synchronized (lock) {
-            if (fileWriter != null) {
-                fileWriter.flush();
-            }
-        }
-    }
-
-
 }
