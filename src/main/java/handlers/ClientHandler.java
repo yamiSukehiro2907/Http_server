@@ -1,4 +1,4 @@
-package Handler;
+package handlers;
 
 import dto.HttpRequest;
 import enums.Method;
@@ -22,7 +22,7 @@ public class ClientHandler {
     private final int MAX_REQUEST_SIZE;
     private final String serverAddress;
     private LocalDateTime prevRequestTime;
-    private String threadName;
+    private final String threadName;
     private int requestCount = 0;
     private static final int MAX_REQUESTS_PER_CONNECTION = 100;
     private static final int KEEP_ALIVE_TIMEOUT_SECONDS = 30;
@@ -37,7 +37,6 @@ public class ClientHandler {
     }
 
     public void handle() {
-
         boolean keepAlive = true;
 
         try {
@@ -57,6 +56,9 @@ public class ClientHandler {
                 if (rawRequest == null || rawRequest.isEmpty()) {
                     if (requestCount == 0) {
                         Logger.errorWithThread(threadName, "Empty request received");
+                        ResponseHandler.sendBadRequest(client.getOutputStream(), "Empty request", "close");
+                    } else {
+                        Logger.logWithThread(threadName, "Client closed connection or no more requests");
                     }
                     break;
                 }
@@ -117,12 +119,10 @@ public class ClientHandler {
                 } else {
                     Logger.logWithThread(threadName, "Connection: keep-alive (request " + requestCount + "/" + MAX_REQUESTS_PER_CONNECTION + ")");
                 }
-
             }
 
             if (requestCount >= MAX_REQUESTS_PER_CONNECTION)
                 Logger.logWithThread(threadName, "Maximum requests per connection reached (" + MAX_REQUESTS_PER_CONNECTION + ")");
-
 
         } catch (Exception e) {
             Logger.logException("Error in ClientHandler", e);
@@ -134,29 +134,58 @@ public class ClientHandler {
     public String readRequest(BufferedReader bufferedReader) throws IOException {
         StringBuilder requestStringBuilder = new StringBuilder();
         String line;
-        int bytesRead;
+        int totalBytesRead = 0;
+        boolean firstLine = true;
+        int contentLength = 0;
+        boolean hasContentLength = false;
 
         while ((line = bufferedReader.readLine()) != null) {
-            bytesRead = line.getBytes().length + 2;
-            if (bytesRead > MAX_REQUEST_SIZE) {
+            if (firstLine && line.isEmpty()) {
+                return null;
+            }
+            firstLine = false;
+
+            int lineBytes = line.getBytes().length + 2;
+            totalBytesRead += lineBytes;
+
+            if (totalBytesRead > MAX_REQUEST_SIZE) {
                 Logger.errorWithThread(threadName, "Request exceeds size limit");
                 return null;
             }
 
             requestStringBuilder.append(line).append("\r\n");
 
-            if (line.isEmpty()) {
-                if (bufferedReader.ready()) {
-                    while (bufferedReader.ready() && bytesRead < MAX_REQUEST_SIZE) {
-                        int c = bufferedReader.read();
-                        if (c == -1) break;
-                        requestStringBuilder.append((char) c);
-                        bytesRead++;
-                    }
+            if (line.toLowerCase().startsWith("content-length:")) {
+                try {
+                    contentLength = Integer.parseInt(line.substring(15).trim());
+                    hasContentLength = true;
+                } catch (NumberFormatException e) {
+                    Logger.errorWithThread(threadName, "Invalid Content-Length");
                 }
+            }
+
+            if (line.isEmpty()) {
                 break;
             }
         }
+
+        if (hasContentLength && contentLength > 0) {
+            char[] bodyChars = new char[contentLength];
+            int read = bufferedReader.read(bodyChars, 0, contentLength);
+            if (read > 0) {
+                requestStringBuilder.append(new String(bodyChars, 0, read));
+            }
+        }
+
+        String request = requestStringBuilder.toString();
+        if (request.trim().isEmpty()) {
+            return null;
+        }
+
+        if (!request.contains("\r\n\r\n") && !request.endsWith("\r\n")) {
+            requestStringBuilder.append("\r\n");
+        }
+
         return requestStringBuilder.toString();
     }
 
@@ -183,15 +212,18 @@ public class ClientHandler {
                 ResponseHandler.sendForbidden(outputStream, "Access denied", httpRequest.getConnectionType());
                 return;
             }
+
             if (!file.exists() || !file.isFile()) {
                 Logger.logWithThread(threadName, "File not found: " + filePath);
                 ResponseHandler.sendNotFound(outputStream, requestPath, httpRequest.getConnectionType());
                 return;
             }
+
             boolean isBinary = !fileExtension.equals(".html");
 
             if (isBinary) sendBinaryFile(file, filePath, outputStream, httpRequest.getConnectionType());
             else sendHtmlFile(file, outputStream, httpRequest.getConnectionType());
+
         } catch (IOException e) {
             Logger.logException("Error handling GET request", e);
             try {
@@ -204,21 +236,15 @@ public class ClientHandler {
 
     private void sendHtmlFile(File file, OutputStream outputStream, String connectionType) throws IOException {
         byte[] fileBytes = Files.readAllBytes(file.toPath());
-
         Logger.logWithThread(threadName, "Serving HTML file: " + file.getName() + " (" + fileBytes.length + " bytes)");
-
         ResponseHandler.sendHtmlResponse(outputStream, fileBytes, connectionType);
-
         Logger.logWithThread(threadName, "Response: 200 OK (" + fileBytes.length + " bytes transferred)");
     }
 
     private void sendBinaryFile(File file, String fileName, OutputStream outputStream, String connectionType) throws IOException {
         byte[] fileBytes = Files.readAllBytes(file.toPath());
-
         Logger.logWithThread(threadName, "Sending binary file: " + fileName + " (" + fileBytes.length + " bytes)");
-
         ResponseHandler.sendBinaryFileResponse(outputStream, fileBytes, fileName, connectionType);
-
         Logger.logWithThread(threadName, "Response: 200 OK (" + fileBytes.length + " bytes transferred)");
     }
 
@@ -244,7 +270,7 @@ public class ClientHandler {
             }
 
             String jsonBody = httpRequest.getBody();
-            if (!RequestHandler.isValidJSON(jsonBody)) {
+            if (!RequestHandler.isValidJson(jsonBody)) {
                 Logger.logWithThread(threadName, "Invalid JSON in request body");
                 ResponseHandler.sendBadRequest(outputStream, "Invalid JSON format in request body", httpRequest.getConnectionType());
                 return;
@@ -268,6 +294,7 @@ public class ClientHandler {
             ResponseHandler.sendCreatedResponse(outputStream, filepath, httpRequest.getConnectionType());
 
             Logger.logWithThread(threadName, "Response: 201 Created");
+
         } catch (IOException e) {
             Logger.logException("Error handling POST request", e);
             try {

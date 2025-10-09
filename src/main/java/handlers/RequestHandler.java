@@ -1,4 +1,4 @@
-package Handler;
+package handlers;
 
 import dto.HttpRequest;
 import enums.Method;
@@ -23,7 +23,6 @@ public class RequestHandler {
                 return createErrorRequest("Request size exceeds maximum allowed size of " + MAX_REQUEST_SIZE + " bytes");
             }
             String[] lines = requestString.split("\\r?\\n");
-            /// if the request does not contain any part
             if (lines.length == 0) return createErrorRequest("Empty Request");
             String requestLine = lines[0].trim();
             if (requestLine.isEmpty()) return createErrorRequest("Empty Request line");
@@ -49,6 +48,23 @@ public class RequestHandler {
                     body
             );
             httpRequest.setValid(true);
+
+            if (headersMap.containsKey("Host")) {
+                httpRequest.setHost(headersMap.get("Host"));
+            }
+
+            if (headersMap.containsKey("Content-Type")) {
+                httpRequest.setContentType(headersMap.get("Content-Type"));
+            }
+
+            if (headersMap.containsKey("Content-Length")) {
+                try {
+                    httpRequest.setContentLength(Integer.parseInt(headersMap.get("Content-Length")));
+                } catch (NumberFormatException e) {
+                    Logger.error("Invalid Content-Length: " + headersMap.get("Content-Length"));
+                }
+            }
+
             return httpRequest;
         } catch (Exception e) {
             Logger.error("Error parsing request: " + e.getMessage());
@@ -104,7 +120,7 @@ public class RequestHandler {
             int colIndex = line.indexOf(":");
             if (colIndex > 0) {
                 String header = line.substring(0, colIndex).trim();
-                String value = line.substring(colIndex).trim();
+                String value = line.substring(colIndex + 1).trim();
                 headersMap.put(normalizeHeaderName(header), value);
             }
         }
@@ -155,7 +171,7 @@ public class RequestHandler {
                 httpRequest.getHeadersMap() != null &&
                 httpRequest.getHeadersMap().containsKey("Host") &&
                 httpRequest.getHeadersMap().get("Host") != null &&
-                httpRequest.getHeadersMap().get("Host").trim().isEmpty();
+                !httpRequest.getHeadersMap().get("Host").trim().isEmpty();
     }
 
     public static boolean validateHostHeader(HttpRequest httpRequest, String expectedHost) {
@@ -176,25 +192,37 @@ public class RequestHandler {
     public static boolean isPathSafe(String path) {
         if (path == null || path.isEmpty()) return false;
         String normalizedPath = path.trim();
+
         if (normalizedPath.contains("..")
                 || normalizedPath.contains("./")
                 || normalizedPath.startsWith("//")
                 || normalizedPath.contains("\\")) {
             return false;
         }
+
         String lowerPath = normalizedPath.toLowerCase();
-        if (lowerPath.contains("%2e%2e") /// URL encoded ..
-                || lowerPath.contains("%2f") ///  URL encoded /
+        if (lowerPath.contains("%2e%2e")
+                || lowerPath.contains("%2f")
                 || lowerPath.startsWith("%5c")) {
             return false;
         }
+        if (lowerPath.startsWith("/etc/")
+                || lowerPath.startsWith("/usr/")
+                || lowerPath.startsWith("/var/")
+                || lowerPath.startsWith("/sys/")
+                || lowerPath.startsWith("/proc/")
+                || lowerPath.contains(":/")
+                || lowerPath.matches("^[a-z]:\\\\.*")) {
+            return false;
+        }
+
         return normalizedPath.startsWith("/");
     }
 
     public static String extractFilePath(String requestPath) {
         if (requestPath == null || requestPath.isEmpty()) return "index.html";
         String path = requestPath.trim();
-        if (path.startsWith("/")) path = path.substring(1); /// removing the slash
+        if (path.startsWith("/")) path = path.substring(1);
         if (path.isEmpty()) return "index.html";
         return path;
     }
@@ -212,11 +240,11 @@ public class RequestHandler {
         return ext.equals(".html")
                 || ext.equals(".txt")
                 || ext.equals(".png")
-                || ext.equals("jpg")
-                || ext.equals("jpeg");
+                || ext.equals(".jpg")
+                || ext.equals(".jpeg");
     }
 
-    public static boolean isValidJSON(String jsonString) {
+    public static boolean isValidJson(String jsonString) {
         if (jsonString == null || jsonString.trim().isEmpty()) return false;
         try {
             com.google.gson.JsonParser.parseString(jsonString);
