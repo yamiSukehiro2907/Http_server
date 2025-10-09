@@ -111,11 +111,11 @@ Http_server/
 3. **Run the server:**
     - To run with default settings (`127.0.0.1:8080`, 10 threads):
       ```sh
-      java -jar target/http_server-1.0.jar
+      java -jar http_server.jar
       ```
     - To run with custom settings (e.g., port 8000, any host, 20 threads):
       ```sh
-      java -jar target/http_server-1.0.jar 8000 0.0.0.0 20
+      java -jar http_server.jar 8000 0.0.0.0 20
       ```
 
 ---
@@ -189,7 +189,7 @@ For each client connection, a `ClientHandler` instance is executed by a worker t
 The server can be configured via command-line arguments:
 
 ```sh
-java -jar target/http_server-1.0.jar [port] [host] [thread_pool_size]
+java -jar http_server.jar [port] [host] [thread_pool_size]
 ```
 
 - **`port`**: The port number to bind to. (Default: `8080`)
