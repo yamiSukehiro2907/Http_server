@@ -68,9 +68,9 @@ Http_server/
 │   │   │   ├── helpers/
 │   │   │   │   ├── Client.java           # Wrapper for client socket and streams
 │   │   │   │   └── Logger.java           # Centralized logging utility
-│   │   │   └── server/
-│   │   │       ├── Server.java           # Main server loop and thread pool management
-│   │   │       └── Main.java             # Application entry point
+│   │   │   ├── server/
+│   │   │   │   └── Server.java           # Main server loop and thread pool management
+│   │   │   └── Main.java             # Application entry point
 │   │   └── resources/
 │   │       ├── uploads/                  # Directory for POST uploads
 │   │       ├── about.html
