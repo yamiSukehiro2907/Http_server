@@ -2,9 +2,8 @@
 
 ![Java](https://img.shields.io/badge/language-Java-blue.svg?style=for-the-badge&logo=java)
 ![Maven](https://img.shields.io/badge/build-Maven-red.svg?style=for-the-badge&logo=apache-maven)
-![License](https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge)
 
-A multi-threaded HTTP/1.1 server built from scratch using low-level Java socket programming. This
+A Multi-threaded HTTP/1.1 server built from scratch using low-level Java socket programming. This
 project demonstrates a deep understanding of the HTTP protocol, concurrent programming, and network security
 fundamentals.
 
@@ -18,6 +17,7 @@ fundamentals.
     - [Prerequisites](#prerequisites)
     - [Installation & Running](#installation--running)
 - [Usage & Testing](#usage--testing)
+    - [Web-Based Test Interface](#web-based-test-interface)
     - [Testing with `curl`](#testing-with-curl)
     - [Concurrency Testing](#concurrency-testing)
 - [Technical Deep Dive](#technical-deep-dive)
@@ -25,7 +25,6 @@ fundamentals.
     - [Request Handling Pipeline](#request-handling-pipeline)
     - [Security Measures](#security-measures)
 - [Configuration](#configuration)
-- [License](#license)
 
 ---
 
@@ -44,6 +43,7 @@ fundamentals.
   request limits.
 - **📊 Comprehensive Logging**: Detailed, timestamped logs for all server activities, managed by a dedicated `Logger`
   class.
+- **🧪 Interactive Test Suite**: Built-in web interface for testing all server endpoints and features.
 
 ---
 
@@ -70,17 +70,19 @@ Http_server/
 │   │   │   │   └── Logger.java           # Centralized logging utility
 │   │   │   ├── server/
 │   │   │   │   └── Server.java           # Main server loop and thread pool management
-│   │   │   └── Main.java             # Application entry point
+│   │   │   └── Main.java                 # Application entry point
 │   │   └── resources/
 │   │       ├── uploads/                  # Directory for POST uploads
-│   │       ├── about.html
-│   │       ├── contact.html
-│   │       ├── index.html
-│   │       ├── logo.png
-│   │       ├── photo.jpg
-│   │       └── sample.txt
+│   │       ├── about.html                # Sample HTML page
+│   │       ├── contact.html              # Sample HTML page
+│   │       ├── index.html                # Default home page
+│   │       ├── test.html                 # Interactive test suite
+│   │       ├── logo.png                  # Sample PNG image
+│   │       ├── photo.jpg                 # Sample JPEG image
+│   │       └── sample.txt                # Sample text file
 │   └── test/
 │       └── test_server.ps1               # PowerShell test script
+├── logs/                                 # Server logs directory
 └── README.md
 ```
 
@@ -111,20 +113,50 @@ Http_server/
 3. **Run the server:**
     - To run with default settings (`127.0.0.1:8080`, 10 threads):
       ```sh
-      java -jar http_server.jar
+      java -cp target/myartifactid-0.0-SNAPSHOT.jar Main
       ```
     - To run with custom settings (e.g., port 8000, any host, 20 threads):
       ```sh
-      java -jar http_server.jar 8000 0.0.0.0 20
+      java -cp target/myartifactid-0.0-SNAPSHOT.jar Main 8000 0.0.0.0 20
       ```
 
 ---
 
 ## Usage & Testing
 
-Once the server is running, you can interact with it using a browser, `curl`, or the provided test script.
+Once the server is running, you can interact with it using multiple methods.
+
+### Web-Based Test Interface
+
+The easiest way to test all server features is through the built-in web interface:
+
+1. **Start the server:**
+   ```sh
+   java -cp target/myartifactid-0.0-SNAPSHOT.jar Main
+   ```
+
+2. **Open your browser and navigate to:**
+   ```
+   http://127.0.0.1:8080/test.html
+   ```
+
+3. **Interactive Test Suite Features:**
+    - ✅ **GET Requests**: Test HTML pages, image downloads, and text files
+    - ✅ **POST Requests**: Upload JSON data with editable text areas
+    - ❌ **Error Cases**: Test 404, 405, 415, and 400 error responses
+    - 🔒 **Security Tests**: Verify path traversal protection
+    - 📊 **Live Response Display**: View status codes, headers, and response bodies in real-time
+
+The test interface provides a beautiful, user-friendly way to verify that all server features are working correctly.
 
 ### Testing with `curl`
+
+For command-line testing, you can use `curl`:
+
+- **Get HTML page:**
+  ```sh
+  curl -v http://localhost:8080/index.html
+  ```
 
 - **Download a binary file:**
   ```sh
@@ -139,13 +171,25 @@ Once the server is running, you can interact with it using a browser, `curl`, or
   -d '{"message": "Testing POST request"}'
   ```
 
+- **Test path traversal protection:**
+  ```sh
+  curl -v http://localhost:8080/../etc/passwd
+  ```
+
+- **Test unsupported method:**
+  ```sh
+  curl -v -X PUT http://localhost:8080/index.html
+  ```
+
 ### Concurrency Testing
 
-Use a tool like Apache Bench (`ab`) to simulate concurrent connections.
+Use Apache Bench (`ab`) to simulate concurrent connections and test server performance:
 
 ```sh
-ab -n 100 -c 10 http://localhost:8080/index.html
+ab -n 1000 -c 50 http://localhost:8080/index.html
 ```
+
+This command sends 1000 requests with 50 concurrent connections.
 
 You can also use the **`test_server.ps1`** PowerShell script located in the `src/test` directory for automated testing
 scenarios.
@@ -156,31 +200,64 @@ scenarios.
 
 ### Thread Pool Architecture
 
-The `Server.java` class initializes a fixed-size thread pool. It runs an infinite loop to accept incoming TCP
-connections. Each accepted client `Socket` is wrapped in a `Client` object and handed off as a task to the thread pool.
-This design decouples connection acceptance from request processing, allowing the server to remain responsive to new
-clients even while handling long-running requests.
+The `Server.java` class initializes a fixed-size thread pool using `ExecutorService`. It runs an infinite loop to accept
+incoming TCP
+connections. Each accepted client `Socket` is wrapped in a `Client` object and added to a `LinkedBlockingQueue`. A
+separate queue processor thread continuously dequeues clients and submits them to the thread pool for processing.
+
+**Key Design Benefits:**
+
+- Decouples connection acceptance from request processing
+- Prevents thread exhaustion through pool size limits
+- Graceful handling of connection spikes through request queuing
+- Efficient resource utilization with thread reuse
 
 ### Request Handling Pipeline
 
 For each client connection, a `ClientHandler` instance is executed by a worker thread. The process is as follows:
 
-1. **Read & Parse**: `ClientHandler` reads the raw request from the socket's input stream.
-2. **Validation**: `RequestHandler` parses the raw string into a structured `HttpRequest` DTO. It validates the request
-   format, method, headers (like `Host`), and path safety.
+1. **Read & Parse**: `ClientHandler` reads the raw HTTP request from the socket's input stream using a `BufferedReader`.
+2. **Validation**: `RequestHandler` parses the raw string into a structured `HttpRequest` DTO. It validates:
+    - Request format and HTTP version
+    - HTTP method (GET/POST only)
+    - Required headers (especially `Host`)
+    - Path safety (prevents directory traversal)
+    - Content-Type for POST requests
 3. **Dispatch**: Based on the HTTP method, `ClientHandler` proceeds:
-    - **GET**: It serves static or binary files from the `resources` directory.
-    - **POST**: It processes the JSON body and saves it to the `uploads` directory.
-4. **Response**: `ResponseHandler` constructs the appropriate HTTP response (e.g., `200 OK`, `201 Created`,
-   `404 Not Found`) and writes it to the socket's output stream.
+    - **GET**: Serves static HTML files or binary files (images, text) from the `resources` directory
+    - **POST**: Validates JSON payload, generates unique filename, and saves to `uploads` directory
+4. **Response**: `ResponseHandler` constructs the appropriate HTTP response with proper status codes:
+    - `200 OK` - Successful GET
+    - `201 Created` - Successful POST
+    - `400 Bad Request` - Malformed request or invalid JSON
+    - `403 Forbidden` - Path traversal or host mismatch
+    - `404 Not Found` - Resource doesn't exist
+    - `405 Method Not Allowed` - Unsupported HTTP method
+    - `415 Unsupported Media Type` - Wrong Content-Type or file type
+    - `500 Internal Server Error` - Server-side errors
 
 ### Security Measures
 
-- **Path Traversal**: `RequestHandler` canonicalizes all requested file paths and strictly ensures they resolve to a
-  location *within* the `resources` folder. Any request containing `..` or attempting to access a parent directory is
-  rejected with a `403 Forbidden` error.
-- **Host Header Validation**: All requests are required to have a `Host` header that matches the server's own address.
-  This is a key requirement of HTTP/1.1 and helps prevent certain types of attacks.
+- **Path Traversal Protection**: `RequestHandler` validates all requested paths before file access:
+    - Blocks `..`, `./`, `//`, and URL-encoded variants
+    - Canonicalizes paths using Java's `Path.normalize()`
+    - Ensures resolved paths stay within `resources` directory
+    - Returns `403 Forbidden` for any violations
+
+- **Host Header Validation**:
+    - All HTTP/1.1 requests must include a valid `Host` header
+    - Server validates the header matches its own address
+    - Accepts `localhost`, `127.0.0.1`, or `0.0.0.0` variations
+    - Returns `400 Bad Request` if missing, `403 Forbidden` if mismatched
+
+- **Request Size Limiting**:
+    - Maximum request size enforced at 8192 bytes
+    - Prevents memory exhaustion attacks
+
+- **Input Validation**:
+    - JSON validation using Google's Gson library
+    - File type restrictions (only HTML, TXT, PNG, JPG/JPEG)
+    - Content-Type verification for POST requests
 
 ---
 
@@ -189,15 +266,67 @@ For each client connection, a `ClientHandler` instance is executed by a worker t
 The server can be configured via command-line arguments:
 
 ```sh
-java -jar http_server.jar [port] [host] [thread_pool_size]
+java -cp target/myartifactid-0.0-SNAPSHOT.jar Main [port] [host] [thread_pool_size]
 ```
+
+**Parameters:**
 
 - **`port`**: The port number to bind to. (Default: `8080`)
 - **`host`**: The host address to bind to. (Default: `127.0.0.1`)
 - **`thread_pool_size`**: The number of worker threads. (Default: `10`)
 
+**Examples:**
+
+```sh
+# Default configuration
+java -cp target/myartifactid-0.0-SNAPSHOT.jar Main
+
+# Custom port
+java -cp target/myartifactid-0.0-SNAPSHOT.jar Main 9000
+
+# Bind to all interfaces
+java -cp target/myartifactid-0.0-SNAPSHOT.jar Main 8080 0.0.0.0
+
+# Custom port, host, and 20 threads
+java -cp target/myartifactid-0.0-SNAPSHOT.jar Main 8000 0.0.0.0 20
+```
+
 ---
 
-## License
+## Testing Checklist
 
-This project is licensed under the MIT License.
+Use the interactive test interface at `http://127.0.0.1:8080/test.html` to verify:
+
+- ✅ GET / → Serves index.html
+- ✅ GET /about.html → Serves HTML page
+- ✅ GET /logo.png → Downloads PNG as binary
+- ✅ GET /photo.jpg → Downloads JPEG as binary
+- ✅ GET /sample.txt → Downloads text file as binary
+- ✅ POST /upload (JSON) → Creates file, returns 201
+- ❌ GET /nonexistent.html → Returns 404
+- ❌ PUT /index.html → Returns 405
+- ❌ DELETE /file.txt → Returns 405
+- ❌ POST /upload (XML) → Returns 415
+- ❌ POST /upload (invalid JSON) → Returns 400
+- ❌ GET /document.pdf → Returns 415
+- 🔒 GET /../etc/passwd → Returns 403
+- 🔒 GET /../../sensitive.txt → Returns 403
+- 🔒 GET //etc/hosts → Returns 403
+
+## Author
+
+**Vimal Kumar**
+
+- GitHub: [@yamiSukehiro2907](https://github.com/yamiSukehiro2907)
+
+---
+
+## Acknowledgments
+
+This project was built as part of a Computer Networks assignment to demonstrate understanding of:
+
+- Low-level socket programming
+- HTTP/1.1 protocol implementation
+- Multi-threaded server architecture
+- Network security best practices
+- Concurrent programming patterns
