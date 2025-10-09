@@ -61,4 +61,13 @@ public class HttpRequest {
     public boolean isJsonType() {
         return contentType != null && contentType.toLowerCase().contains("application/json");
     }
+
+    public boolean isGet() {
+        if (method == null || method.toString().isEmpty()) return false;
+        return method.toString().equals("GET");
+    }
+
+    public boolean hasBody(){
+        return body != null && !body.isEmpty();
+    }
 }

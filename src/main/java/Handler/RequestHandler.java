@@ -4,17 +4,22 @@ import dto.HttpRequest;
 import enums.Method;
 import helpers.Logger;
 
+import java.security.SecureRandom;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-public class ParseHandler {
+public class RequestHandler {
 
     private static final int MAX_REQUEST_SIZE = 8192;
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789";
 
     public static HttpRequest parseRequest(String requestString) {
         if (requestString == null || requestString.trim().isEmpty()) return createErrorRequest("Empty Request");
         try {
-            if (requestString.getBytes().length > 8192) {
+            if (requestString.getBytes().length > MAX_REQUEST_SIZE) {
                 return createErrorRequest("Request size exceeds maximum allowed size of " + MAX_REQUEST_SIZE + " bytes");
             }
             String[] lines = requestString.split("\\r?\\n");
@@ -209,5 +214,55 @@ public class ParseHandler {
                 || ext.equals(".png")
                 || ext.equals("jpg")
                 || ext.equals("jpeg");
+    }
+
+    public static boolean isValidJSON(String jsonString) {
+        if (jsonString == null || jsonString.trim().isEmpty()) return false;
+        try {
+            com.google.gson.JsonParser.parseString(jsonString);
+            return true;
+        } catch (com.google.gson.JsonSyntaxException e) {
+            return false;
+        }
+    }
+
+    public static String generateUploadFilename() {
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss");
+        String timeStamp = dateFormat.format(new Date());
+        String randomId = generateRandomString();
+        return "upload_" + timeStamp + "_" + randomId + ".json";
+    }
+
+    private static String generateRandomString() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 4; i++) {
+            sb.append(CHARACTERS.charAt(RANDOM.nextInt(CHARACTERS.length())));
+        }
+        return sb.toString();
+    }
+
+    public static String sanitizeFileName(String filename) {
+        if (filename == null) return "";
+        return filename.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    public static String getMimeType(String extension) {
+        if (extension == null) return "application/octet-stream";
+
+        switch (extension.toLowerCase()) {
+            case ".html":
+                return "text/html; charset=utf-8";
+            case ".txt":
+                return "text/plain";
+            case ".png":
+                return "image/png";
+            case ".jpg":
+            case ".jpeg":
+                return "image/jpeg";
+            case ".json":
+                return "application/json";
+            default:
+                return "application/octet-stream";
+        }
     }
 }
